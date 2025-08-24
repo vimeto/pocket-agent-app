@@ -115,7 +115,7 @@ You MUST use submit_python_solution to submit your final solution.`,
     },
     qwen: {
       base: {
-        systemPrompt: "You are a Python programmer. Complete functions by providing the implementation.",
+        systemPrompt: "Output ONLY code. No text.",
         userSuffix: "\n\nComplete this function:"
       },
       tool_submission: {
@@ -125,7 +125,7 @@ You MUST use submit_python_solution to submit your final solution.`,
 {"name": "submit_python_solution", "parameters": {"code": "solution"}}
 \`\`\`
 
-Always wrap tool calls in \`\`\`tool_call blocks.`,
+Always wrap tool calls in \`\`\`tool_call blocks. Do not return anything else.`,
         userSuffix: "\n\nSubmit the complete function:"
       },
       full_tool: {
@@ -266,7 +266,7 @@ You MUST call submit_python_solution with your complete solution.`,
       return 'gemma';
     } else if (lowerModelId.includes('llama')) {
       return 'llama';
-    } else if (lowerModelId.includes('qwen')) {
+    } else if (lowerModelId.includes('qwen') || lowerModelId.includes('deepseek')) {
       return 'qwen';
     }
 

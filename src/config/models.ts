@@ -45,7 +45,7 @@ export const DEFAULT_MODELS: Model[] = [
 
 export const DEFAULT_INFERENCE_CONFIG = {
   temperature: 0.7,
-  maxTokens: 2048,
+  maxTokens: 4092,
   topP: 0.9,
   topK: 40,
   repeatPenalty: 1.1,
