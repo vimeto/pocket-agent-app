@@ -7,10 +7,10 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as SQLite from 'expo-sqlite';
 import { BenchmarkSession, BenchmarkProblemResult, SystemMetricSnapshot } from '../types/benchmark';
-import { PerformanceService } from './PerformanceService';
 import { PowerMeasurementService } from './PowerMeasurementService';
 import { StatisticalAnalysisService } from './StatisticalAnalysisService';
 import { SystemMonitorService } from './SystemMonitorService';
+import { PrefillBenchmarkResults, formatResultsForExport } from '../utils/prefillBenchmark';
 
 export interface ExportOptions {
   format: 'sqlite' | 'csv' | 'json';
@@ -21,15 +21,19 @@ export interface ExportOptions {
   compressOutput: boolean;
 }
 
+export interface PrefillExportOptions {
+  format: 'csv' | 'json';
+  includeSystemMetrics: boolean;
+  includePowerMeasurements: boolean;
+}
+
 export class ExportService {
   private static instance: ExportService;
-  private performanceService: PerformanceService;
   private powerService: PowerMeasurementService;
   private statisticalService: StatisticalAnalysisService;
   private systemMonitor: SystemMonitorService;
 
   private constructor() {
-    this.performanceService = PerformanceService.getInstance();
     this.powerService = PowerMeasurementService.getInstance();
     this.statisticalService = StatisticalAnalysisService.getInstance();
     this.systemMonitor = SystemMonitorService.getInstance();
@@ -280,7 +284,9 @@ export class ExportService {
     const deviceInfo = {
       chipset: deviceMetrics.deviceChipset,
       hasGPU: deviceMetrics.hasGPU,
-      hasNeuralEngine: deviceMetrics.hasNeuralEngine
+      hasNeuralEngine: deviceMetrics.hasNeuralEngine,
+      model: deviceMetrics.deviceChipset || 'Unknown', // Use chipset as model
+      osVersion: 'Unknown' // OS version not available from current metrics
     };
     
     await db.runAsync(
@@ -436,7 +442,7 @@ export class ExportService {
           metric.availableMemoryMB,
           metric.cpuUsage || null,
           metric.cpuTemperature || null,
-          metric.gpuUsage || null,
+          null, // gpuUsage not available in SystemMetricSnapshot
           metric.gpuTemperature || null,
           metric.batteryLevel || null,
           metric.batteryState || null,
@@ -450,9 +456,9 @@ export class ExportService {
    * Insert statistical analysis
    */
   private async insertStatisticalAnalysis(
-    db: SQLite.SQLiteDatabase,
-    sessionId: string,
-    analysis: any
+    _db: SQLite.SQLiteDatabase,
+    _sessionId: string,
+    _analysis: any
   ): Promise<void> {
     // This would insert the statistical analysis data
     // Implementation depends on the analysis structure
@@ -477,8 +483,8 @@ export class ExportService {
       'success', 'tokens', 'prompt_tokens', 'completion_tokens',
       'inference_time_ms', 'ttft_ms', 'tps',
       'peak_memory_mb', 'avg_memory_mb', 'min_memory_mb',
-      'avg_cpu_percent', 'peak_cpu_percent',
-      'energy_consumed_joules', 'energy_per_token_joules',
+      'avg_cpu_percent_ESTIMATED', 'peak_cpu_percent_ESTIMATED',
+      'energy_consumed_joules_ESTIMATED', 'energy_per_token_joules_ESTIMATED',
       'min_latency_ms', 'max_latency_ms', 'avg_latency_ms',
       'jitter_std_ms', 'p50_latency_ms', 'p95_latency_ms', 'p99_latency_ms',
       'test_cases_total', 'test_cases_passed', 'test_cases_failed'
@@ -567,13 +573,31 @@ export class ExportService {
     const filePath = `${FileSystem.documentDirectory}${fileName}`;
     
     // Build comprehensive export data
-    const exportData = {
+    const exportData: any = {
       export_metadata: {
         version: '1.0',
         exported_at: new Date().toISOString(),
         export_type: 'complete_session_data',
         total_problems: session.problems.length,
-        schema_version: '1.0'
+        schema_version: '1.0',
+        measurement_accuracy: {
+          note: 'IMPORTANT: Many metrics are ESTIMATED, not actual measurements',
+          real_measurements: [
+            'tokens', 'inference_time_ms', 'ttft_ms', 'tps',
+            'memory_mb (process memory only)', 'battery_level',
+            'thermal_state', 'display_brightness'
+          ],
+          estimated_measurements: [
+            'cpu_percent (based on memory usage, NOT real CPU)',
+            'gpu_percent (always returns fixed 20%)',
+            'neural_engine_percent (always returns fixed 5%)',
+            'energy_consumed_joules (model-based estimate)',
+            'power_watts (derived from estimates)',
+            'cpu_frequency (fixed values)',
+            'memory_bandwidth (rough estimate)'
+          ],
+          accuracy_disclaimer: 'Estimated values may differ from actual by ±50% or more'
+        }
       },
       session,
       // Add additional enriched data
@@ -590,12 +614,12 @@ export class ExportService {
     
     // Add statistical analysis if requested
     if (options.includeStatisticalAnalysis) {
-      exportData['statistical_analysis'] = await this.statisticalService.analyzeSession(session);
+      exportData.statistical_analysis = await this.statisticalService.analyzeSession(session);
     }
     
     // Add power profile if available
     if (options.includePowerMeasurements) {
-      exportData['power_profile'] = await this.powerService.getPowerProfile();
+      exportData.power_profile = this.powerService.getPowerProfile();
     }
     
     const jsonString = JSON.stringify(exportData, null, 2);
@@ -638,6 +662,142 @@ export class ExportService {
       return `"${value.replace(/"/g, '""')}"`;
     }
     return value;
+  }
+
+  /**
+   * Export prefill benchmark results
+   */
+  async exportPrefillBenchmark(
+    results: PrefillBenchmarkResults,
+    options: PrefillExportOptions
+  ): Promise<string> {
+    console.log('[ExportService] Starting prefill benchmark export:', options.format);
+
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const baseFileName = `prefill_${results.modelId}_${timestamp}`;
+      let filePath: string;
+
+      switch (options.format) {
+        case 'csv':
+          filePath = await this.exportPrefillToCSV(results, baseFileName, options);
+          break;
+        case 'json':
+          filePath = await this.exportPrefillToJSON(results, baseFileName, options);
+          break;
+        default:
+          throw new Error(`Unsupported format: ${options.format}`);
+      }
+
+      // Share the file
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(filePath, {
+          mimeType: this.getMimeType(options.format),
+          dialogTitle: `Export Prefill Benchmark - ${results.modelId}`
+        });
+      }
+
+      return filePath;
+    } catch (error) {
+      console.error('[ExportService] Prefill export failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Export prefill results to CSV
+   */
+  private async exportPrefillToCSV(
+    results: PrefillBenchmarkResults,
+    baseFileName: string,
+    options: PrefillExportOptions
+  ): Promise<string> {
+    const filePath = `${FileSystem.documentDirectory}${baseFileName}.csv`;
+
+    // Build CSV header
+    const headers = [
+      'requested_tokens',
+      'actual_tokens',
+      'iteration',
+      'ttft_ms',
+      'tps',
+      'total_response_time_ms',
+      'prompt_eval_time_ms',
+      'token_eval_time_ms',
+      'timestamp'
+    ];
+
+    if (options.includeSystemMetrics) {
+      headers.push('cpu_usage', 'memory_usage_mb', 'thermal_state');
+    }
+
+    if (options.includePowerMeasurements) {
+      headers.push('power_mw', 'energy_mj');
+    }
+
+    let csv = headers.join(',') + '\n';
+
+    // Add data rows
+    for (const result of results.results) {
+      const row = [
+        result.requestedTokens,
+        result.actualTokens,
+        result.iteration,
+        result.ttftMs.toFixed(2),
+        result.tps.toFixed(2),
+        result.totalResponseTimeMs.toFixed(2),
+        result.promptEvalTimeMs?.toFixed(2) || '',
+        result.tokenEvalTimeMs?.toFixed(2) || '',
+        result.timestamp.toISOString()
+      ];
+
+      if (options.includeSystemMetrics && result.systemMetrics?.after) {
+        row.push(
+          result.systemMetrics.after.cpuUsage?.toFixed(2) || '',
+          result.systemMetrics.after.memoryUsage?.toFixed(0) || '',
+          result.systemMetrics.after.thermalState || ''
+        );
+      }
+
+      if (options.includePowerMeasurements && result.energyMetrics?.after) {
+        row.push(
+          result.energyMetrics.after.power?.toFixed(0) || '',
+          result.energyMetrics.after.energyConsumed?.toFixed(0) || ''
+        );
+      }
+
+      csv += row.map(v => this.escapeCSV(String(v))).join(',') + '\n';
+    }
+
+    await FileSystem.writeAsStringAsync(filePath, csv);
+    console.log('[ExportService] Prefill CSV export complete:', filePath);
+    return filePath;
+  }
+
+  /**
+   * Export prefill results to JSON
+   */
+  private async exportPrefillToJSON(
+    results: PrefillBenchmarkResults,
+    baseFileName: string,
+    options: PrefillExportOptions
+  ): Promise<string> {
+    const filePath = `${FileSystem.documentDirectory}${baseFileName}.json`;
+
+    const exportData = formatResultsForExport(results);
+
+    // Remove system and energy metrics if not requested
+    if (!options.includeSystemMetrics) {
+      exportData.results.forEach((r: any) => delete r.system_metrics);
+    }
+    if (!options.includePowerMeasurements) {
+      exportData.results.forEach((r: any) => delete r.energy_metrics);
+    }
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    await FileSystem.writeAsStringAsync(filePath, jsonString);
+    console.log('[ExportService] Prefill JSON export complete:', filePath);
+    return filePath;
   }
 
   /**

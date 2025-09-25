@@ -74,10 +74,13 @@ export const PerformanceOverlay: React.FC<PerformanceOverlayProps> = ({ messageI
       </TouchableOpacity>
 
       <Text style={styles.title}>Performance Metrics</Text>
+      <Text style={[styles.metricLabel, { color: theme.colors.warning || '#FFA500', marginBottom: 8 }]}>
+        ⚠️ Power/CPU/GPU values are simulated estimates
+      </Text>
       
       {messageMetrics && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Inference Metrics</Text>
+          <Text style={styles.sectionTitle}>Inference Metrics (Real)</Text>
           <View style={styles.metricRow}>
             <Text style={styles.metricLabel}>TTFT:</Text>
             <Text style={styles.metricValue}>{messageMetrics.ttft?.toFixed(0) || 'N/A'} ms</Text>
@@ -101,22 +104,24 @@ export const PerformanceOverlay: React.FC<PerformanceOverlayProps> = ({ messageI
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>System Metrics</Text>
           <View style={styles.metricRow}>
-            <Text style={styles.metricLabel}>Memory:</Text>
+            <Text style={styles.metricLabel}>Memory (Real):</Text>
             <Text style={styles.metricValue}>{currentSystemMetrics.memoryUsageMB.toFixed(0)} MB</Text>
           </View>
           <View style={styles.metricRow}>
-            <Text style={styles.metricLabel}>Available:</Text>
+            <Text style={styles.metricLabel}>Available (Real):</Text>
             <Text style={styles.metricValue}>{currentSystemMetrics.availableMemoryMB.toFixed(0)} MB</Text>
           </View>
           {currentSystemMetrics.cpuUsage !== undefined && (
             <View style={styles.metricRow}>
-              <Text style={styles.metricLabel}>CPU:</Text>
-              <Text style={styles.metricValue}>{currentSystemMetrics.cpuUsage.toFixed(1)}%</Text>
+              <Text style={styles.metricLabel}>CPU (FAKE!):</Text>
+              <Text style={[styles.metricValue, { color: theme.colors.warning || '#FFA500' }]}>
+                ~{currentSystemMetrics.cpuUsage.toFixed(1)}% (estimated)
+              </Text>
             </View>
           )}
           {currentSystemMetrics.batteryLevel !== undefined && (
             <View style={styles.metricRow}>
-              <Text style={styles.metricLabel}>Battery:</Text>
+              <Text style={styles.metricLabel}>Battery (Real):</Text>
               <Text style={styles.metricValue}>
                 {currentSystemMetrics.batteryLevel}% ({currentSystemMetrics.batteryState})
               </Text>

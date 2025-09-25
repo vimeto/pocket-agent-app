@@ -275,6 +275,12 @@ export class InferenceService {
     }
   }
 
+  cancelGeneration(): void {
+    // Set the cancellation flag to stop ongoing generation
+    this.isCancelled = true;
+    this.currentCompletion = null;
+  }
+
   getCurrentModelId(): string | null {
     return this.currentModelId;
   }

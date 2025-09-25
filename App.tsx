@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { BenchmarkScreen } from './src/screens/BenchmarkScreen';
+import { PrefillBenchmarkScreen } from './src/screens/PrefillBenchmarkScreen';
 import { PythonWebView } from './src/components/PythonWebView';
 import { theme } from './src/constants/theme';
 
@@ -41,6 +42,15 @@ export default function App() {
           options={{
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="speedometer-outline" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tab.Screen
+          name="Prefill"
+          component={PrefillBenchmarkScreen}
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="timer-outline" size={size} color={color} />
             ),
           }}
         />

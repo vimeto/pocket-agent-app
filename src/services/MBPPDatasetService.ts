@@ -28,8 +28,8 @@ export class MBPPDatasetService {
     }
 
     this.isLoading = true;
-    this.loadPromise = forceFallback 
-      ? this.loadFallbackDatasetAsync() 
+    this.loadPromise = forceFallback
+      ? this.loadFallbackDatasetAsync()
       : this.loadDatasetInternal();
 
     try {
@@ -39,7 +39,7 @@ export class MBPPDatasetService {
       this.loadPromise = null;
     }
   }
-  
+
   private async loadFallbackDatasetAsync(): Promise<void> {
     this.problems.clear();
     this.loadFallbackDataset();
@@ -194,7 +194,7 @@ export class MBPPDatasetService {
   getAllProblems(): MBPPProblem[] {
     return Array.from(this.problems.values());
   }
-  
+
 
   getProblemsInRange(startId: number, endId: number): MBPPProblem[] {
     const result: MBPPProblem[] = [];

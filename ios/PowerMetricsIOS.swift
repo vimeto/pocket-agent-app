@@ -150,7 +150,8 @@ class PowerMetricsIOS: RCTEventEmitter {
         let batteryLevel = UIDevice.current.batteryLevel
         let isCharging = UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
         
-        // Estimate power consumption based on system state
+        // WARNING: ALL POWER VALUES ARE FAKE ESTIMATES - NOT REAL MEASUREMENTS!
+        // iOS does not provide access to actual power consumption data
         let cpuPower = estimateCPUPower(usage: cpuInfo["percentage"] as? Double ?? 0, thermalState: thermalState)
         let gpuPower = estimateGPUPower(thermalState: thermalState)
         let memoryPower = estimateMemoryPower(usage: memoryInfo["used"] as? Double ?? 0)
@@ -161,34 +162,55 @@ class PowerMetricsIOS: RCTEventEmitter {
         
         return [
             "timestamp": timestamp,
+            "measurement_type": "ESTIMATED", // CLEARLY LABEL AS FAKE!
+            "warning": "All power and usage values are simulated estimates, not real measurements",
             "cpu": [
                 "watts": cpuPower,
-                "percentage": cpuInfo["percentage"] ?? 0,
+                "watts_is_estimated": true,
+                "percentage": cpuInfo["percentage"] ?? 0,  // FAKE - based on memory usage!
+                "percentage_is_fake": true,
                 "frequency": cpuInfo["frequency"] ?? 0,
                 "efficiency_cores": cpuInfo["efficiency_cores"],
                 "performance_cores": cpuInfo["performance_cores"]
             ],
             "gpu": [
                 "watts": gpuPower,
-                "percentage": estimateGPUUsage()
+                "watts_is_estimated": true,
+                "percentage": estimateGPUUsage(),  // ALWAYS RETURNS 20%!
+                "percentage_is_fake": true
             ],
             "memory": [
                 "watts": memoryPower,
-                "bandwidth": memoryInfo["bandwidth"] ?? 0,
-                "usage": memoryInfo["used"] ?? 0
+                "watts_is_estimated": true,
+                "bandwidth": memoryInfo["bandwidth"] ?? 0,  // FAKE!
+                "bandwidth_is_fake": true,
+                "usage": memoryInfo["used"] ?? 0  // This is REAL (process memory)
             ],
             "display": [
                 "watts": displayPower,
-                "brightness": UIScreen.main.brightness
+                "watts_is_estimated": true,
+                "brightness": UIScreen.main.brightness  // This is REAL
             ],
             "neural_engine": [
                 "watts": neuralPower,
-                "percentage": estimateNeuralEngineUsage()
+                "watts_is_estimated": true,
+                "percentage": estimateNeuralEngineUsage(),  // ALWAYS RETURNS 5%!
+                "percentage_is_fake": true
             ],
             "system": [
                 "total_watts": totalPower,
+                "total_watts_is_estimated": true,
                 "battery_drain_ma": estimateBatteryDrain(totalPower: totalPower, isCharging: isCharging),
-                "voltage": estimateBatteryVoltage()
+                "battery_drain_ma_is_estimated": true,
+                "voltage": estimateBatteryVoltage(),
+                "voltage_is_estimated": true
+            ],
+            "real_measurements": [
+                "battery_level": batteryLevel,  // REAL
+                "thermal_state": thermalStateString(thermalState),  // REAL
+                "is_charging": isCharging,  // REAL
+                "display_brightness": UIScreen.main.brightness,  // REAL
+                "memory_used_mb": memoryInfo["used"] ?? 0  // REAL
             ]
         ]
     }
@@ -314,8 +336,14 @@ class PowerMetricsIOS: RCTEventEmitter {
     
     // Power estimation methods
     private func estimateCPUPower(usage: Double, thermalState: ProcessInfo.ThermalState) -> Double {
-        var basePower = 0.5 // Idle power in watts
+        // Always have baseline power when app is running
+        // Mobile CPUs typically use 1-2W idle, 3-6W active
+        var basePower = 1.0 // Baseline when app is active (was 0.5)
         let activePower = 4.0 // Max active power
+        
+        // If usage is suspiciously low, assume at least 20% during inference
+        // This handles the case where memory-based "CPU usage" gives us 0
+        let effectiveUsage = max(usage, 20.0)
         
         // Adjust for thermal state
         let thermalMultiplier: Double
@@ -332,7 +360,7 @@ class PowerMetricsIOS: RCTEventEmitter {
             thermalMultiplier = 1.0
         }
         
-        return basePower + (usage / 100) * activePower * thermalMultiplier
+        return basePower + (effectiveUsage / 100) * activePower * thermalMultiplier
     }
     
     private func estimateGPUPower(thermalState: ProcessInfo.ThermalState) -> Double {
@@ -354,9 +382,15 @@ class PowerMetricsIOS: RCTEventEmitter {
     
     private func estimateDisplayPower() -> Double {
         let brightness = UIScreen.main.brightness
-        let minPower = 0.5
-        let maxPower = 2.0
-        return minPower + brightness * (maxPower - minPower)
+        // Display always consumes power when on
+        // Modern phone displays: 0.5-3W depending on brightness
+        let minPower = 0.8  // Minimum display power (was 0.5)
+        let maxPower = 2.5  // Maximum display power
+        
+        // If brightness is 0 (which happens in some cases), assume 50%
+        let effectiveBrightness = brightness > 0 ? brightness : 0.5
+        
+        return minPower + effectiveBrightness * (maxPower - minPower)
     }
     
     private func estimateNeuralEnginePower() -> Double {
