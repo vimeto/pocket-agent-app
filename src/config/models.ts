@@ -41,6 +41,16 @@ export const DEFAULT_MODELS: Model[] = [
     downloaded: false,
     requiresAuth: false,
   },
+  {
+    id: 'qwen-3-0.6B',
+    name: 'Qwen 3 0.6B',
+    size: 700000000, // ~700MB for Q4_K_M
+    url: 'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf',
+    quantization: 'Q8_0',
+    architecture: 'qwen',
+    downloaded: false,
+    requiresAuth: false,
+  }
 ];
 
 export const DEFAULT_INFERENCE_CONFIG = {

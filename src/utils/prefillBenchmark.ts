@@ -114,7 +114,8 @@ export function formatResultsForExport(results: PrefillBenchmarkResults): any {
  * Calculate statistics for a set of results at a given token length
  */
 export function calculateStats(results: PrefillResult[], tokenLength: number) {
-  const filtered = results.filter(r => r.actualTokens === tokenLength);
+  // Filter for the specific token length AND exclude invalid measurements (ttft <= 0)
+  const filtered = results.filter(r => r.actualTokens === tokenLength && r.ttftMs > 0);
 
   if (filtered.length === 0) {
     return null;
@@ -125,9 +126,12 @@ export function calculateStats(results: PrefillResult[], tokenLength: number) {
   const variance = ttfts.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / ttfts.length;
   const std = Math.sqrt(variance);
 
+  const invalidCount = results.filter(r => r.actualTokens === tokenLength && r.ttftMs <= 0).length;
+
   return {
     tokenLength,
     count: filtered.length,
+    invalidCount,
     mean,
     std,
     min: Math.min(...ttfts),

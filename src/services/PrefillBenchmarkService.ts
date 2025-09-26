@@ -95,6 +95,10 @@ export class PrefillBenchmarkService {
       for (let i = 0; i < warmupRuns; i++) {
         if (this.isCancelled) break;
 
+        // Clear cache before warmup to ensure fresh evaluation
+        console.log(`[PrefillBenchmark] Clearing cache for warmup ${i + 1}`);
+        await this.inferenceService.clearCache();
+
         const prompt = generatePrompt(maxLength);
         await this.runSingleInference(prompt, maxLength, -1); // -1 indicates warmup
         this.updateProgress((i + 1) / warmupRuns * 0.1, `Warmup ${i + 1}/${warmupRuns}`);
@@ -107,6 +111,11 @@ export class PrefillBenchmarkService {
 
         for (let iteration = 0; iteration < config.iterations; iteration++) {
           if (this.isCancelled) break;
+
+          // CRITICAL: Clear cache before EVERY measurement to ensure we measure actual prefill time
+          // Without this, llama.rn will cache the prompt and report prompt_ms = 0
+          console.log(`[PrefillBenchmark] Clearing cache for ${promptLength} tokens, iteration ${iteration}`);
+          await this.inferenceService.clearCache();
 
           const prompt = generatePrompt(promptLength);
           const result = await this.runSingleInference(prompt, promptLength, iteration);
@@ -161,10 +170,12 @@ export class PrefillBenchmarkService {
       };
 
       // Capture system metrics before inference
-      const systemMetricsBefore = await this.systemMonitor.getLatestMetrics();
-      const powerMetricsBefore = await this.powerService.getCurrentMeasurements();
+      const systemMetricsBefore = await this.systemMonitor.collectMetrics();
+      const powerMetricsBefore = await this.powerService.getCurrentMetrics();
 
+      // Manual timing for accurate measurement
       const startTime = Date.now();
+      const performanceStart = performance.now();
 
       // Run inference
       const result = await this.inferenceService.generateResponse(
@@ -175,33 +186,56 @@ export class PrefillBenchmarkService {
         sessionId
       );
 
+      const performanceEnd = performance.now();
       const endTime = Date.now();
       const totalResponseTime = endTime - startTime;
+      const preciseResponseTime = performanceEnd - performanceStart;
 
       // Capture system metrics after inference
-      const systemMetricsAfter = await this.systemMonitor.getLatestMetrics();
-      const powerMetricsAfter = await this.powerService.getCurrentMeasurements();
+      const systemMetricsAfter = await this.systemMonitor.collectMetrics();
+      const powerMetricsAfter = await this.powerService.getCurrentMetrics();
 
       // Get performance metrics
       const perfMetrics = this.performanceService.getSessionMetrics(sessionId);
       let ttftMs = 0;
       let tps = 0;
 
-      if (perfMetrics && perfMetrics.messages.length > 0) {
-        const msgMetrics = perfMetrics.messages[0];
-        ttftMs = msgMetrics.ttft || 0;
-        tps = msgMetrics.tps || 0;
+      // Try different sources for TTFT in order of preference
+      if (perfMetrics && perfMetrics.messageMetrics) {
+        const msgMetrics = perfMetrics.messageMetrics.get(messageId);
+        if (msgMetrics) {
+          ttftMs = msgMetrics.ttft || 0;
+          tps = msgMetrics.tps || 0;
+        }
       }
 
-      // If we didn't get TTFT from streaming, try to get it from result timings
-      if (ttftMs === 0 && result?.timings?.prompt_ms) {
+      // Check if tokens were cached (which would invalidate our measurement)
+      const tokensCached = result?.tokens_cached || 0;
+      const tokensEvaluated = result?.tokens_evaluated || 0;
+
+      console.log(`[PrefillBenchmark] Tokens - Cached: ${tokensCached}, Evaluated: ${tokensEvaluated}`);
+      console.log(`[PrefillBenchmark] Timings - prompt_ms: ${result?.timings?.prompt_ms}, predicted_ms: ${result?.timings?.predicted_ms}`);
+
+      // For prefill benchmark, we MUST have a valid prompt_ms (non-zero)
+      if (result?.timings?.prompt_ms && result.timings.prompt_ms > 0) {
+        // This is the actual prefill time
         ttftMs = result.timings.prompt_ms;
+        console.log(`[PrefillBenchmark] Valid prefill measurement: ${ttftMs}ms`);
+      } else if (result?.timings?.prompt_ms === 0) {
+        // This indicates caching, which invalidates the measurement
+        console.error(`[PrefillBenchmark] WARNING: Tokens were cached! prompt_ms=0 is invalid for prefill benchmark`);
+        console.error(`[PrefillBenchmark] This measurement will be excluded or marked invalid`);
+        // For now, we'll use a negative value to indicate invalid measurement
+        ttftMs = -1;
+      } else {
+        // No timing data available
+        console.error(`[PrefillBenchmark] ERROR: No valid prompt_ms available`);
+        ttftMs = -1;
       }
 
-      // If we still don't have TTFT, use total response time as fallback
-      if (ttftMs === 0) {
-        ttftMs = totalResponseTime;
-        console.warn(`[PrefillBenchmark] No TTFT available, using total response time: ${ttftMs}ms`);
+      // Update TPS if needed
+      if (tps === 0 && result?.timings?.predicted_per_second) {
+        tps = result.timings.predicted_per_second;
       }
 
       // Skip warmup results

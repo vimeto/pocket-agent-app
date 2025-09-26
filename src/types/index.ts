@@ -30,8 +30,8 @@ export interface InferenceConfig {
   maxTokens: number;
   topP: number;
   topK: number;
-  repeatPenalty: number;
-  contextLength: number;
+  repeatPenalty?: number;
+  contextLength?: number;
   stopTokens?: string[];
   jinja?: boolean;
   tool_choice?: string;

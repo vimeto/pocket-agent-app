@@ -5,20 +5,16 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { Picker } from '@react-native-picker/picker';
 import { PrefillBenchmarkService } from '../services/PrefillBenchmarkService';
 import { ModelService } from '../services/ModelService';
 import { ExportService } from '../services/ExportService';
 import { PrefillPromptConfig, PrefillBenchmarkResults, calculateStats } from '../utils/prefillBenchmark';
 
 export function PrefillBenchmarkScreen() {
-  const navigation = useNavigation();
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -28,11 +24,11 @@ export function PrefillBenchmarkScreen() {
 
   // Benchmark configuration
   const [config, setConfig] = useState<PrefillPromptConfig>({
-    minTokens: 50,
-    maxTokens: 3000,
-    step: 50,
-    iterations: 20,
-    warmupRuns: 5,
+    minTokens: 100,
+    maxTokens: 1000,
+    step: 100,
+    iterations: 10,
+    warmupRuns: 1,
   });
 
   const benchmarkService = PrefillBenchmarkService.getInstance();
@@ -84,8 +80,18 @@ export function PrefillBenchmarkScreen() {
 
   const cancelBenchmark = () => {
     benchmarkService.cancel();
-    setIsRunning(false);
-    setStatusMessage('Benchmark cancelled');
+    setStatusMessage('Stopping benchmark after current iteration...');
+    // Don't set isRunning to false immediately - wait for completion
+    setTimeout(() => {
+      setIsRunning(false);
+      setStatusMessage('Benchmark stopped');
+      // Get any partial results
+      const partialResults = benchmarkService.getCurrentResults();
+      if (partialResults) {
+        setResults(partialResults);
+        Alert.alert('Benchmark Stopped', 'Partial results are available for export.');
+      }
+    }, 1000);
   };
 
   const exportResults = async (format: 'json' | 'csv' = 'json') => {
@@ -155,18 +161,35 @@ export function PrefillBenchmarkScreen() {
         {/* Model Selection */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Model Selection</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={selectedModel}
-              onValueChange={setSelectedModel}
-              enabled={!isRunning}
-              style={styles.picker}
-            >
+          {availableModels.length === 0 ? (
+            <View style={styles.noModelsContainer}>
+              <Text style={styles.noModelsText}>No models downloaded. Please download a model first.</Text>
+            </View>
+          ) : (
+            <View style={styles.modelButtonsContainer}>
               {availableModels.map(model => (
-                <Picker.Item key={model} label={model} value={model} />
+                <TouchableOpacity
+                  key={model}
+                  style={[
+                    styles.modelButton,
+                    selectedModel === model && styles.selectedModelButton,
+                    isRunning && styles.disabledButton,
+                  ]}
+                  onPress={() => setSelectedModel(model)}
+                  disabled={isRunning}
+                >
+                  <Text
+                    style={[
+                      styles.modelButtonText,
+                      selectedModel === model && styles.selectedModelButtonText,
+                    ]}
+                  >
+                    {model}
+                  </Text>
+                </TouchableOpacity>
               ))}
-            </Picker>
-          </View>
+            </View>
+          )}
         </View>
 
         {/* Configuration */}
@@ -276,12 +299,17 @@ export function PrefillBenchmarkScreen() {
               )}
             </>
           ) : (
-            <TouchableOpacity
-              style={[styles.button, styles.dangerButton]}
-              onPress={cancelBenchmark}
-            >
-              <Text style={styles.buttonText}>Cancel</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={[styles.button, styles.dangerButton]}
+                onPress={cancelBenchmark}
+              >
+                <Text style={styles.buttonText}>Stop Benchmark</Text>
+              </TouchableOpacity>
+              {statusMessage.includes('Stopping') && (
+                <Text style={styles.stoppingText}>Waiting for current iteration to complete...</Text>
+              )}
+            </>
           )}
         </View>
       </ScrollView>
@@ -322,14 +350,9 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginBottom: 15,
   },
-  pickerContainer: {
-    backgroundColor: '#3a3a3a',
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  picker: {
-    color: '#ffffff',
-    height: 50,
+  modelButtonsContainer: {
+    flexDirection: 'column',
+    gap: 10,
   },
   configRow: {
     flexDirection: 'row',
@@ -428,5 +451,53 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modelScrollView: {
+    maxHeight: 50,
+  },
+  modelButton: {
+    backgroundColor: '#3a3a3a',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+  },
+  selectedModelButton: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  modelButtonText: {
+    color: '#cccccc',
+    fontSize: 16,
+  },
+  selectedModelButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  noModelsContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  noModelsText: {
+    color: '#999999',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  debugText: {
+    color: '#888888',
+    fontSize: 12,
+    marginBottom: 5,
+  },
+  stoppingText: {
+    color: '#FFA500',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
   },
 });

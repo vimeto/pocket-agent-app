@@ -187,23 +187,23 @@ export class ModelService {
   async getModelPath(modelId: string): Promise<string | null> {
     const models = await this.getAvailableModels();
     const model = models.find(m => m.id === modelId);
-    
+
     if (!model?.downloaded) {
       return null;
     }
-    
+
     // If model has a path but it's an absolute path from a previous installation,
     // reconstruct it with the current document directory
     if (model.path) {
       const fileName = model.path.split('/').pop();
       const currentPath = `${MODELS_DIR}/${fileName}`;
-      
+
       // Check if file exists at the expected location
       const exists = await RNFS.exists(currentPath);
       if (exists) {
         // Update the model with the correct path if it changed
         if (model.path !== currentPath) {
-          const updatedModels = models.map(m => 
+          const updatedModels = models.map(m =>
             m.id === modelId ? { ...m, path: currentPath } : m
           );
           await this.saveModels(updatedModels);
@@ -211,19 +211,26 @@ export class ModelService {
         return currentPath;
       }
     }
-    
+
     // Fallback: try default filename
     const defaultPath = `${MODELS_DIR}/${modelId}.gguf`;
     const exists = await RNFS.exists(defaultPath);
     if (exists) {
       // Update the model with the correct path
-      const updatedModels = models.map(m => 
+      const updatedModels = models.map(m =>
         m.id === modelId ? { ...m, path: defaultPath } : m
       );
       await this.saveModels(updatedModels);
       return defaultPath;
     }
-    
+
     return null;
+  }
+
+  async getDownloadedModels(): Promise<string[]> {
+    const models = await this.getAvailableModels();
+    return models
+      .filter(m => m.downloaded)
+      .map(m => m.id);
   }
 }

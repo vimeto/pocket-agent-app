@@ -25,8 +25,8 @@ export class InferenceService {
     return InferenceService.instance;
   }
 
-  async loadModel(modelId: string): Promise<void> {
-    if (this.currentModelId === modelId && this.context) {
+  async loadModel(modelId: string, forceReload: boolean = false): Promise<void> {
+    if (this.currentModelId === modelId && this.context && !forceReload) {
       return;
     }
 
@@ -287,5 +287,26 @@ export class InferenceService {
 
   isModelLoaded(): boolean {
     return this.context !== null;
+  }
+
+  async clearCache(): Promise<void> {
+    // Clear the KV cache to ensure fresh evaluation
+    if (this.context) {
+      try {
+        // Try to clear the cache if the method exists
+        if (typeof this.context.clearCache === 'function') {
+          await this.context.clearCache();
+        } else {
+          // Alternative: reload the model to get a fresh context
+          const modelId = this.currentModelId;
+          if (modelId) {
+            console.log('[InferenceService] Clearing cache by reloading model');
+            await this.loadModel(modelId, true);
+          }
+        }
+      } catch (error) {
+        console.error('[InferenceService] Error clearing cache:', error);
+      }
+    }
   }
 }
